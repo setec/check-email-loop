@@ -1,7 +1,7 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 #
-# Version:     1.4         ($Id: $)             
-# Last update: 2010-29-09
+# Version:     1.4.1         ($Id: $)             
+# Last update: 2011-15-06
 #
 # (c)2000 Benjamin Schmid, blueshift@gmx.net (emergency use only ;-)
 # Copyleft by GNU GPL
@@ -63,8 +63,13 @@
 #  - Added IMAP4 support. (Still a bit dirty code)
 #  - Some code cleanups, fix a lot of warnings.
 #
+# Frieder, June 2011, v1.4.1
+#  - Added support for IMAP starttls with option "-usestarttls"
+#  - Removed "-w" 
+#
 use Mail::POP3Client;
 use Mail::IMAPClient;
+use MIME::Base64;
 use Net::SMTP;
 use strict;
 use Getopt::Long;
@@ -84,6 +89,7 @@ my ($sender,$receiver, $pophost, $popuser, $poppasswd,$keeporphaned, $popport);
 my ($useimap,$imapfolder);
 my ($smtphost, $smtpuser, $smtppasswd, $smtpport);
 my ($trashall,$usessl,$forgetafter);
+my ($usestarttls);
 my ($usesmtpssl,$usesmtptls);
 my ($poptimeout,$smtptimeout,$pinginterval,$maxmsg)=(60,60,5,50);
 my ($lostwarn, $lostcrit,$pendwarn, $pendcrit,$debug);
@@ -145,6 +151,7 @@ my $status = GetOptions(
 			"keeporphaned=s",\$keeporphaned,
 			"trashall",\$trashall,
 			"usessl",\$usessl,
+			"usestarttls",\$usestarttls,
 			"usesmtpssl",\$usesmtpssl,
 			"usesmtptls",\$usesmtptls,
 			);
@@ -252,7 +259,7 @@ my $serial = "ID#" . $timenow . "#$$";
 #    printd ("----------------------------------------------------------------------\n");
 #
 # FIXME ... TODO. Interval Option currently not implemented.
-}
+#}
 
 # sending new ping email
 %other_smtp_opts=();
@@ -392,6 +399,7 @@ sub usage {
   print "   -keeporphaned      Set this to NOT delete orphaned E-Mail Ping msg from POP3\n";
   print "   -trashall          Set this to DELETE all E-Mail msg on server\n";
   print "   -usessl            Set this to login with ssl enabled on server\n";
+  print "   -usestarttls       Set this to login with STARTTLS on imap server\n";
   print "   -debug             Print debug messages like SMTP tranaction info to stderr\n\n";
   print " Options may abbreviated!\n";
   print " LOST mails are mails, being sent before the last mail arrived back.\n";
@@ -576,7 +584,7 @@ sub doImap {
 			$imap->User($popuser);
 			$imap->Password($poppasswd);
 			$imap->login() or die "$@";
-#		} elsif( $tls ) {
+		} elsif( $usestarttls ) {
 #			# XXX  THIS PART IS NOT DONE YET ... NEED TO OPEN A REGULAR IMAP CONNECTION, THEN ISSUE THE "STARTTLS" COMMAND MANUALLY, SWITCHING THE SOCKET TO IO::SOCKET::SSL, AND THEN GIVING IT BACK TO MAIL::IMAPCLIENT ...
 #			$imap_port = $default_imap_port unless $imap_port;		
 #			$imap = Mail::IMAPClient->new(Debug => 0 );		
@@ -584,6 +592,14 @@ sub doImap {
 #			$imap->User($username);
 #			$imap->Password($password);
 #			$imap->connect() or die "$@";		
+			$imap_port = 143 unless $popport;		
+			$imap = Mail::IMAPClient->new(Debug => 0 );		
+			$imap->Server($pophost);
+			$imap->Port($imap_port);
+			$imap->connect() or die "Unable to connect to imap server";
+			$imap->has_capability("STARTTLS") and $imap->starttls;
+			$imap->tag_and_run("AUTHENTICATE PLAIN " . encode_base64("\0" . $popuser . "\0" . $poppasswd))
+  				or die "Unable to login to imap server with user " . $popuser;
 		} else {
 			$imap_port = 143 unless $popport;		
 			$imap = Mail::IMAPClient->new(Debug => 0 );		
