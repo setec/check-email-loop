@@ -1,11 +1,7 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 #
-my $scriptversion = "1.4.2";
-my $scriptdate = "2011-08-30";
-#
-# (c)2000-2011 Benjamin Schmid, blueshift@gmx.net (emergency use only ;-)
-# Copyleft by GNU GPL
-#
+my $scriptversion = "1.4.3";
+my $scriptdate = "2012-05-22";
 #
 # check_email_loop Nagios Plugin
 #
@@ -61,6 +57,8 @@ my $scriptdate = "2011-08-30";
 #  - sanity check for required Authen:SASL module
 #
 # 2010-10-09 v1.4.0     Arjen Heidinga <arjen.heidinga@anachron.com> 
+#  (NOTE: This branch forked of v.1.3.1 and did not include the minor
+#         stabilization fixes of the 'oldstable' version 1.3.2 to 1.3.3
 #  - Added IMAP4 support. (Still a bit dirty code)
 #  - Some code cleanups, fix a lot of warnings.
 #
@@ -72,6 +70,19 @@ my $scriptdate = "2011-08-30";
 # - Custom E-Mail subject which allows to reuse the same inbox for multiple loops
 # - New -sendnomail and -sendmailonly option
 #
+# 2012-05-22 v1.4.3     Benjamin Schmid, blueshift@gmx.net 
+# - Started Git repository & realizing the big version mess
+# - Minor cleanups to the hacks starting with IMAP fork of v.1.3.1
+# - Ommit perl warnings
+#
+#
+#
+# (c) 2000-2012 by the authors mentioned above
+#
+# This software is licensed under the terms and conditions of the GPLv2 license
+#   https://www.gnu.org/licenses/gpl-2.0.html
+#
+
 use MIME::Base64;
 use strict;
 use Getopt::Long;
@@ -97,7 +108,7 @@ my ($subjectident) = ("E-Mail Ping");
 my ($sendmailonly,$sendnomail);
 my ($usesendmail) = ("");
 my ($usesmtpssl,$usesmtptls);
-my ($poptimeout,$smtptimeout,$pinginterval,$maxmsg)=(60,60,5,50);
+my ($poptimeout,$smtptimeout,$maxmsg)=(60,60,50);
 my ($lostwarn, $lostcrit,$pendwarn, $pendcrit);
 my ($debug) = (0);
 
@@ -152,7 +163,6 @@ my $status = GetOptions(
 			"smtppasswd=s",\$smtppasswd,
 			"smtpport=i",\$smtpport,
 			"statfile=s",\$statfile,
-			"interval=i",\$pinginterval,
 			"lostwarn=i",\$lostwarn,
 			"lostcrit=i",\$lostcrit,
 			"pendwarn=i",\$pendwarn,
@@ -267,26 +277,6 @@ my $timenow = time();
 my $serial = "ID#" . $timenow . "#$$";
 
 # Ok - check if it's time to release another mail
-
-# ...
-
-#if (defined $pinginterval) {
-#    if (!defined $newestid) {
-#        $newestid=$messageids[-1];
-#    } elsif ($messageids[-1] > $newestid) {
-#        $newestid = $messageids[-1];
-#    }
-#    $newestid =~ /\#(\d+)\#/;
-#    $newestid = $1;
-#
-#    printd ("----------------------------------------------------------------------\n");
-#    printd ("-------------------- INTERVAL: $pinginterval -----------------\n");
-#    printd ("-------------------- TIME: $timenow --------------------------\n");
-#    printd ("-------------------- LAST: $newestid -------------------------\n");
-#    printd ("----------------------------------------------------------------------\n");
-#
-# FIXME ... TODO. Interval Option currently not implemented.
-#}
 
 # sending new ping email
 if (!defined($sendnomail)) {
@@ -409,7 +399,7 @@ if (!defined($sendmailonly)) {
 # ----------------------------------------------------------------------
 
 sub usage {
-  print "check_email_loop $scriptversion ($scriptdate) === Nagios Plugin for monitoring E-Mail systems\n";
+  print "check_email_loop $scriptversion ($scriptdate) === Nagios Plugin for monitoring email systems\n";
   exit 0 if  $showversion;
   print "-" x 75,"\nERROR: Missing or wrong arguments!\n","-" x 75,"\n";
   print "This script sends a mail with a specific id in the subject via an given\n";
@@ -439,8 +429,6 @@ sub usage {
   print "   -statfile=text     File to save ids of messages ($statfile)\n";
   print "   -statfilename=text Similar like -statfile but add no hash to the filename\n";
   print "   -subjectident=text Identify the email. So we can distinct origin. (Default: 'E-Mail Ping')\n";
-#  print "   -interval=num      Time (in minutes) that must pass by before sending\n";
-#  print "                      another Ping-mail (give a new try);\n"; 
   print "   -lostwarn=num      WARNING-state if more than num lost emails\n";
   print "   -lostcrit=num      CRITICAL \n";
   print "   -pendwarn=num      WARNING-state if more than num pending emails\n";
@@ -463,9 +451,8 @@ sub usage {
   print " $0 -poph=host -pa=pw -popu=popts -smtph=host -from=root\@me.com\n ";
   print "      -to=remailer\@testxy.com -lostc=0 -pendc=2\n";
   print "\n";
-  print "Copyleft 2000-2011 Benjamin Schmid, Michael Markstaller <mm\@elabnet.de>\n";
-  print "This script comes with ABSOLUTELY NO WARRANTY\n";
-  print "This program is licensed under the terms of the GNU General Public License\n\n";
+  print "This software comes with ABSOLUTELY NO WARRANTY and is licensed under the \n";
+  print "terms and conditions of the GNU General Public License v2\n\n";
   exit $ERRORS{"UNKNOWN"};
 }
 
@@ -479,6 +466,7 @@ sub printd {
 }
 
 # ---------------------------------------------------------------------
+
 sub module_loader {
 	my ($module) = @_;
 	eval "use $module";
@@ -694,14 +682,8 @@ sub doImap {
 		exit $ERRORS{CRITICAL};
 	}
 	
-	my $searchfailed = 0;
 	my @messagelist = ();
 	@messagelist = $imap->search("SUBJECT \"$subjectident [\"");
-	#if ($searchfailed == 1) {
-		#print "IMAP SEARCH CRITICAL - Could not search $imapfolder: $@ $!\n";
-		#$imap->logout();
-		#exit $ERRORS{CRITICAL};
-	#}
 	$statinfo=@messagelist . " messages on IMAP";
 	
 	my ($mid, $nid);
@@ -740,6 +722,5 @@ sub doImap {
 	}
 	
 	$imap->close();
-	#exit();
 }
 
