@@ -76,13 +76,13 @@ my $scriptdate = "2012-05-22";
 # - Ommit perl warnings
 #
 #
-#
-# (c) 2000-2012 by the authors mentioned above
-#
 # This software is licensed under the terms and conditions of the GPLv2 license
 #   https://www.gnu.org/licenses/gpl-2.0.html
 #
-
+# The latest version can be found on GitHub
+#   GitHub project:  https://github.com/setec/check-email-loop
+#   Git URL:         git@github.com:setec/check-email-loop.git
+#
 use MIME::Base64;
 use strict;
 use Getopt::Long;
