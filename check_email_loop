@@ -64,6 +64,10 @@
 # Benjamin Schmid, Februrary 2009 (v.1.3.2)
 # * Remove "-w" parameter to ommit annoying perl warning in line 261 
 #   probably due to missing mail subjects/bodies
+#
+# Benjamin Schmid, March 2009 (v.1.3.3)
+# * Make POP-Port configurable
+
 
 use Mail::POP3Client;
 use Net::SMTP;
@@ -85,7 +89,7 @@ my ($sender,$receiver, $pophost, $popuser, $poppasswd,$keeporphaned);
 my ($smtphost, $smtpuser, $smtppasswd, $smtpport);
 my ($trashall,$usessl,$forgetafter);
 my ($usesmtpssl,$usesmtptls);
-my ($poptimeout,$smtptimeout,$pinginterval,$maxmsg)=(60,60,5,50);
+my ($poptimeout, $popport, $smtptimeout,$pinginterval,$maxmsg)=(60,110,60,5,50);
 my ($lostwarn, $lostcrit,$pendwarn, $pendcrit,$debug);
 
 $debug = 0;
@@ -95,6 +99,7 @@ my ($pop,$msgcount,@msglines,$statinfo,@messageids,$newestid);
 my (%other_smtp_opts);
 my ($matchcount,$statfile) = (0,"check_email_loop");
 
+my $default_pop3_port = "110";
 my $default_smtp_port = "25";
 my $default_smtp_ssl_port = "465";
 my $default_smtp_tls_port = "587";
@@ -119,11 +124,12 @@ alarm($TIMEOUT);
 
 # Evaluate Command Line Parameters
 my $status = GetOptions(
-		        "from=s",\$sender,
+            "from=s",\$sender,
 			"to=s",\$receiver,
-                        "debug", \$debug,
-                        "pophost=s",\$pophost,
-                        "popuser=s",\$popuser,
+            "debug", \$debug,
+            "pophost=s",\$pophost,
+            "popuser=s",\$popuser,
+            "popport=i",\$popport,
 			"passwd=s",\$poppasswd,
 			"poptimeout=i",\$poptimeout,
 			"smtphost=s",\$smtphost,
@@ -211,6 +217,7 @@ else { printd ("Retrieving POP mails from $pophost using user: $popuser and pass
 $pop = Mail::POP3Client->new( HOST => $pophost,
         TIMEOUT => $poptimeout,
         USESSL => $usessl ,
+        PORT => $popport,
         DEBUG => $debug ) || nsexit("POP3 connect timeout (>$poptimeout s, host: $pophost)",'CRITICAL');
 
 $pop->User($popuser);
@@ -439,10 +446,11 @@ sub usage {
   print "\nThe following options are available:\n";
   print	"   -from=text         email adress of send (for mail returnr on errors)\n";
   print	"   -to=text           email adress to which the mails should send to\n";
-  print "   -pophost=text      IP or name of the POP3-host to be checked\n";
+  print "   -pophost=text      IP or name of the POP3 server to be checked\n";
+  print	"   -popport=num       Alternative port for POP3 server (Default 110)\n";
   print "   -popuser=text      Username of the POP3-account\n";
-  print	"   -passwd=text       Password for the POP3-user\n";
-  print	"   -poptimeout=num    Timeout in seconds for the POP3-server\n";
+  print	"   -passwd=text       Password for the POP3 user\n";
+  print	"   -poptimeout=num    Timeout in seconds for the POP3 server\n";
   print "   -smtphost=text     IP oder name of the SMTP host\n";
   print "   -smtpuser=text     name of the SMTP user\n";
   print "   -smtppasswd=text   password of the SMTP user\n";
@@ -457,7 +465,7 @@ sub usage {
   print "   -lostcrit=num      CRITICAL \n";
   print "   -pendwarn=num      WARNING-state if more than num pending emails\n";
   print "   -pendcrit=num      CRITICAL \n";
-  print "   -maxmsg=num        WARNING if more than num emails on POP3 (default 50)\n";
+  print "   -maxmsg=num        WARNING if more than num emails on POP3 (Default 50)\n";
   print "   -forgetafter=num   Forget Pending and Lost emails after num days\n";
   print "   -keeporphaned      Set this to NOT delete orphaned E-Mail Ping msg from POP3\n";
   print "   -trashall          Set this to DELETE all E-Mail msg on server\n";
