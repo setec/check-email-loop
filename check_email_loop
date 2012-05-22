@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# $Id: check_email_loop.pl,v 1.5 2005/11/29 23:21:06 harpermann Exp $
+# Last update: 2006-10-11
 #
 # (c)2000 Benjamin Schmid, blueshift@gmx.net (emergency use only ;-)
 # Copyleft by GNU GPL
@@ -15,8 +15,8 @@
 # 
 #
 # Example: check_email_loop.pl -poph=mypop -popu=user -pa=password
-# 	   -smtph=mailer -from=returnadress@yoursite.com
-#	   -to=remaileradress@friend.com -pendc=2 -lostc=0
+#          -smtph=mailer -from=returnadress@yoursite.com
+#          -to=remaileradress@friend.com -pendc=2 -lostc=0
 #
 # This example will send eacht time this check is executed a new
 # mail to remaileradress@friend.com using the SMTP-Host mailer.
@@ -27,24 +27,27 @@
 # send later came back prior to another mail).
 # 
 # Michael Markstaller, mm@elabnet.de various changes/additions
-# MM 021003: fixed some unquoted strings
-# MM 021116: fixed/added pendwarn/lostwarn
-# MM 030515: added deleting of orphaned check-emails 
-#					  changed to use "top" instead of get to minimize traffic (required changing match-string from "Subject: Email-ping [" to "Email-Ping ["
+# MM 021003:  fixed some unquoted strings
+# MM 021116:  fixed/added pendwarn/lostwarn
+# MM 030515:  added deleting of orphaned check-emails
+#             changed to use "top" instead of get to minimize traffic
+#             (required changing match-string from "Subject: Email-ping [" to "Email-Ping ["
+# 2006-11-09: Allow multiple mail-servers (separate stats files via target server hash).
 
 use Net::POP3;
 use Net::SMTP;
 use strict;
 use Getopt::Long;
+use Digest::MD5;
 &Getopt::Long::config('auto_abbrev');
 
 # ----------------------------------------
 
 my $TIMEOUT = 120;
-my %ERRORS = ('OK' , '0',
+my %ERRORS = ('UNKNOWN' , '-1',
+              'OK' , '0',
               'WARNING', '1',
-              'CRITICAL', '2',
-              'UNKNOWN' , '3');
+              'CRITICAL', '2');
 
 my $state = "UNKNOWN";
 my ($sender,$receiver, $pophost, $popuser, $poppasswd, $smtphost,$keeporphaned);
@@ -72,26 +75,30 @@ alarm($TIMEOUT);
 
 # Evaluate Command Line Parameters
 my $status = GetOptions(
-		        "from=s",\$sender,
-			"to=s",\$receiver,
+                        "from=s",\$sender,
+                        "to=s",\$receiver,
                         "debug", \$debug,
                         "pophost=s",\$pophost,
                         "popuser=s",\$popuser,
-			"passwd=s",\$poppasswd,
-			"poptimeout=i",\$poptimeout,
-			"smtphost=s",\$smtphost,
-			"smtptimeout=i",\$smtptimeout,
-			"statfile=s",\$statfile,
-			"interval=i",\$pinginterval,
-			"lostwarn=i",\$lostwarn,
-			"lostcrit=i",\$lostcrit,
-			"pendwarn=i",\$pendwarn,
-			"pendcrit=i",\$pendcrit,
-			"maxmsg=i",\$maxmsg,
-			"keeporphaned=s",\$keeporphaned,
-			);
+                        "passwd=s",\$poppasswd,
+                        "poptimeout=i",\$poptimeout,
+                        "smtphost=s",\$smtphost,
+                        "smtptimeout=i",\$smtptimeout,
+                        "statfile=s",\$statfile,
+                        "interval=i",\$pinginterval,
+                        "lostwarn=i",\$lostwarn,
+                        "lostcrit=i",\$lostcrit,
+                        "pendwarn=i",\$pendwarn,
+                        "pendcrit=i",\$pendcrit,
+                        "maxmsg=i",\$maxmsg,
+                        "keeporphaned=s",\$keeporphaned,
+                        );
 usage() if ($status == 0 || ! ($pophost && $popuser && $poppasswd &&
-	$smtphost && $receiver && $sender ));
+        $smtphost && $receiver && $sender ));
+
+my $statfilehash = Digest::MD5->new;
+$$statfilehash->add($sender.$receiver.$pophost.$popuser.$poppasswd.$smtphost);
+$statfile = "check_email_loop_".$statfilehash->hexdigest.".stat";
 
 # Try to read the ids of the last send emails out of statfile
 if (open STATF, "$statfile") {
@@ -136,7 +143,7 @@ my $smtp = Net::SMTP->new($smtphost,Timeout=>$smtptimeout, %other_smtp_opts)
 # no the interessting part: let's if they are receiving ;-)
 
 $pop = Net::POP3->new( $pophost, 
-		 Timeout=>$poptimeout) 
+		               Timeout=>$poptimeout)
        || nsexit("POP3 connect timeout (>$poptimeout s, host: $pophost)",'CRITICAL');
 
 $msgcount=$pop->login($popuser,$poppasswd);
@@ -156,21 +163,21 @@ while ($msgcount > 0) {
     if (messagematchsid(\@msglines,$messageids[$i])) { 
       $matchcount++;
       # newest received mail than the others, ok remeber id.
-      if (!defined $newestid) { 
+      if (!defined $newestid) {
         $newestid = $messageids[$i];
       } else {
 	    $messageids[$i] =~ /\#(\d+)\#/;
         $mid = $1;
 	    $newestid =~ /\#(\d+)\#/;
         $nid = $1;
-        if ($mid > $nid) { 
-          $newestid = $messageids[$i]; 
+        if ($mid > $nid) {
+          $newestid = $messageids[$i];
         }
       }
       $pop->delete($msgcount);  # remove E-Mail from POP3 server
       splice @messageids, $i, 1;# remove id from List
 	  last;                     # stop looking in list
-	} 
+	}
   } 
 	# Delete orphaned Email-ping msg
 	my @msgsubject = grep /^Subject/, @msglines;
