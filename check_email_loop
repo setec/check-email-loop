@@ -1,9 +1,7 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 #
-# $Id: $
-#
-# Version 1.2             
-# Last update: 2007-06-11
+# Version:     1.4         ($Id: $)             
+# Last update: 2010-29-09
 #
 # (c)2000 Benjamin Schmid, blueshift@gmx.net (emergency use only ;-)
 # Copyleft by GNU GPL
@@ -19,7 +17,7 @@
 #
 # Example: check_email_loop.pl -poph=mypop -popu=user -pa=password
 # 	   -smtph=mailer -from=returnadress@yoursite.com
-#	   -to=remaileradress@friend.com -pendc=2 -lostc=0
+#	     -to=remaileradress@friend.com -pendc=2 -lostc=0
 #
 # This example will send each time this check is executed a new
 # mail to remaileradress@friend.com using the SMTP-Host mailer.
@@ -29,42 +27,44 @@
 # back till now) or if a mails got lost (meaning a mail, that was
 # send later came back prior to another mail).
 # 
-# Michael Markstaller, mm@elabnet.de various changes/additions
-# MM 021003: fixed some unquoted strings
-# MM 021116: fixed/added pendwarn/lostwarn
-# MM 030515: added deleting of orphaned check-emails 
-#            changed to use "top" instead of get to minimize traffic
-#            (required changing match-string from "Subject: Email-ping [" to "Email-Ping ["
-# 2006-11-09: Allow multiple mail-servers (separate stats files via target server hash).
+# Michael Markstaller, mm@elabnet.de various changes/additions, 2006
+#  - fixed some unquoted strings
+#  - fixed/added pendwarn/lostwarn
+#  - added deleting of orphaned check-emails 
+#    changed to use "top" instead of get to minimize traffic
+#    (required changing match-string from "Subject: Email-ping [" 
+#     to "Email-Ping ["
+#  - Allow multiple mail-servers (separate stats files via target server hash).
 #
 # Emmanuel Kedaj (Emmanuel.kedaj@gmail.com)
-# Added some debug messages
-# retrieving POP3 mails before sending actual test mail
-# as mentionned by Dave Ewall <dave_at_email.domain.hidden> on 19 Jul 2005 on Nagios-users mailing list
-# https://lists.sourceforge.net/lists/listinfo/nagios-users
+#  - Added some debug messages
+#  - retrieving POP3 mails before sending actual test mail
+#  - as mentionned by Dave Ewall <dave_at_email.domain.hidden> on 19 Jul 2005 
+#    on Nagios-users mailing list
+#    https://lists.sourceforge.net/lists/listinfo/nagios-users
 #
+# Jb007 (007_james_bond NO @ SPAM libero.it), Oct 2006
+#  - Used Mail::POP3Client for SSL support
+#  - Added trashall param
+#  - Fixed lost mail stat file
+#  - Added forgetafter param
+#  Remaining Bugs:
+#  - Try to delete matched id already marked for deletion
+#  - "interval" param yet has no effect 
 #
-# Jb007 (007_james_bond NO @ SPAM libero.it) Oct 2006
-# ChangeLog:
-# * Used Mail::POP3Client for SSL support
-# * Added trashall param
-# * Fixed lost mail stat file
-# * Added forgetafter param
-# Bugs:
-# * Try to delete matched id already marked for deletion
-# * No interval even if present in options
-# Todo:
-# Implement "interval" param
+# Johannes Derek, May 2008
+#  - Added Support for SMTP Authentication (code taken from check_email_delivery)
+#  - SMTP TLS Support working, SMTP SSL Support not tested
 #
-# Johannes Derek May 2008
-# * Added Support for SMTP Authentication (code taken from check_email_delivery)
-# * SMTP TLS Support working, SMTP SSL Support not tested
+# James W., September 2008, v1.3.1  
+#  - sanity check for required Authen:SASL module
 #
-# James W., September 2008  (v.1.3.1)
-# * sanity check for required Authen:SASL module
+# Arjen Heidinga <arjen.heidinga@anachron.com>, September 2010, v1.4 
+#  - Added IMAP4 support. (Still a bit dirty code)
+#  - Some code cleanups, fix a lot of warnings.
 #
-
 use Mail::POP3Client;
+use Mail::IMAPClient;
 use Net::SMTP;
 use strict;
 use Getopt::Long;
@@ -80,7 +80,8 @@ my %ERRORS = ('OK' , '0',
               'UNKNOWN' , '3');
 
 my $state = "UNKNOWN";
-my ($sender,$receiver, $pophost, $popuser, $poppasswd,$keeporphaned);
+my ($sender,$receiver, $pophost, $popuser, $poppasswd,$keeporphaned, $popport);
+my ($useimap,$imapfolder);
 my ($smtphost, $smtpuser, $smtppasswd, $smtpport);
 my ($trashall,$usessl,$forgetafter);
 my ($usesmtpssl,$usesmtptls);
@@ -125,6 +126,9 @@ my $status = GetOptions(
                         "popuser=s",\$popuser,
 			"passwd=s",\$poppasswd,
 			"poptimeout=i",\$poptimeout,
+			"popport=i",\$popport,
+			"useimap",\$useimap,
+			"imapfolder=s",\$imapfolder,
 			"smtphost=s",\$smtphost,
 			"smtptimeout=i",\$smtptimeout,
 			"smtpuser=s",\$smtpuser,
@@ -171,18 +175,16 @@ if (open STATF, "$statfile") {
 if (!open STATF, ">$statfile") {
   nsexit("Failed to open mail-ID database $statfile for writing",'CRITICAL');
 } else {
-  printd ("Opened $statfile for writing..");
+  printd ("Opened $statfile for writing...\n");
 }
 
 # Forget old mail
 if (defined $forgetafter) {
         my $timeis=time();
         printd ("----------------------------------------------------------------------\n");
-        printd ("----------------------------------------------------------------------\n");
         printd ("-------------------- Purging Old Mails -------------------------------\n");
         printd ("-------------------- Time: $timeis -------------------------------\n");
         printd ("-------------------- Forget: $forgetafter ------------------------\n");
-        printd ("----------------------------------------------------------------------\n");
         printd ("----------------------------------------------------------------------\n");
         for (my $i=0; $i < scalar @messageids; $i++) {
                 my $msgtime = $messageids[$i];
@@ -197,83 +199,14 @@ if (defined $forgetafter) {
         }
 }
 
-printd ("----------------------------------------------------------------------\n");
-printd ("----------------------------------------------------------------------\n");
-printd ("-------------------- Checking POP3 Mails -----------------------------\n");
-printd ("----------------------------------------------------------------------\n");
-printd ("----------------------------------------------------------------------\n");
-if (defined $usessl) { printd ("Retrieving POP mails from $pophost using ssl and user: $popuser and password $poppasswd\n"); }
-else { printd ("Retrieving POP mails from $pophost using user: $popuser and password $poppasswd\n"); }
 
-# no the interessting part: let's if they are receiving ;-)
-
-$pop = Mail::POP3Client->new( HOST => $pophost,
-        TIMEOUT => $poptimeout,
-        USESSL => $usessl ,
-        DEBUG => $debug ) || nsexit("POP3 connect timeout (>$poptimeout s, host: $pophost)",'CRITICAL');
-
-$pop->User($popuser);
-$pop->Pass($poppasswd);
-$pop->Connect() >=0 || nsexit("POP3 connect timeout (>$poptimeout s, host: $pophost)",'CRITICAL');
-$pop->Login()|| nsexit("POP3 login failed (user:$popuser)",'CRITICAL');
-$msgcount=$pop->Count();
-
-$statinfo="$msgcount mails on POP3";
-
-printd ("Found $statinfo\n");
-
-nsexit("POP3 login failed (user:$popuser)",'CRITICAL') if (!defined($msgcount));
-
-# Check if more than maxmsg mails in pop3-box
-nsexit(">$maxmsg Mails ($msgcount Mails on POP3); Please delete !",'WARNING') if ($msgcount > $maxmsg);
-
-my ($mid, $nid);
-# Count messages, that we are looking 4:
-while ($msgcount > 0) {
-  my $msgtext = "";
-  foreach ($pop->Head($msgcount)) { $msgtext= $msgtext . $_ . "\n"; }
-  @msglines = $msgtext;
-  for (my $i=0; $i < scalar @messageids; $i++) {
-    if (messagematchsid(\@msglines,$messageids[$i])) { 
-      $matchcount++;
-      printd ("Messages are matching\n");
-      # newest received mail than the others, ok remeber id.
-      if (!defined $newestid) { 
-        $newestid = $messageids[$i];
-      } else {
-	    $messageids[$i] =~ /\#(\d+)\#/;
-        $mid = $1;
-	    $newestid =~ /\#(\d+)\#/;
-        $nid = $1;
-        if ($mid > $nid) { 
-          $newestid = $messageids[$i]; 
-        }
-      }
-      printd ("Deleted retrieved mail $msgcount with messageid ".$messageids[$i]."\n");
-      $pop->Delete($msgcount);  # remove E-Mail from POP3 server
-      splice @messageids, $i, 1;# remove id from List
-	  last;                     # stop looking in list
-	} 
-  }
-        # Messages Deleted before are marked for deletion here again
-	# we should try to avoid this.
-	# Delete orphaned Email-ping msg
-	my @msgsubject = grep /^Subject/, @msglines;
-	chomp @msgsubject;
-        # Maybe we should delete all messages?
-        if (defined $trashall) {
-            $pop->Delete($msgcount);
-            printd ("Deleted mail $msgcount\n");
-	# Scan Subject if email is an Email-Ping. In fact we match and delete also successfully retrieved messages here again.
-	} elsif (!defined $keeporphaned && $msgsubject[0] =~ /E-Mail Ping \[/) {
-	    $pop->Delete($msgcount);  # remove E-Mail from POP3 server
-            printd ("Deleted orphaned mail $msgcount with subject ".$msgsubject[0]."\n");
-	}
-
-	$msgcount--;
+if (defined($useimap)) {
+	doImap();
+} else {
+	doPop();
 }
 
-$pop->close();  # necessary for pop3 deletion!
+
 
 # traverse through the message list and mark the lost mails
 # that mean mails that are older than the last received mail.
@@ -303,7 +236,7 @@ my $serial = "ID#" . $timenow . "#$$";
 
 # ...
 
-if (defined $pinginterval) {
+#if (defined $pinginterval) {
 #    if (!defined $newestid) {
 #        $newestid=$messageids[-1];
 #    } elsif ($messageids[-1] > $newestid) {
@@ -313,15 +246,12 @@ if (defined $pinginterval) {
 #    $newestid = $1;
 #
 #    printd ("----------------------------------------------------------------------\n");
-#    printd ("----------------------------------------------------------------------\n");
 #    printd ("-------------------- INTERVAL: $pinginterval -----------------\n");
 #    printd ("-------------------- TIME: $timenow --------------------------\n");
 #    printd ("-------------------- LAST: $newestid -------------------------\n");
 #    printd ("----------------------------------------------------------------------\n");
-#    printd ("----------------------------------------------------------------------\n");
 #
-# FIXME ... TODO
-
+# FIXME ... TODO. Interval Option currently not implemented.
 }
 
 # sending new ping email
@@ -414,9 +344,7 @@ printd ("Pending  : $pendingm\n");
 printd ("Lost     : $lostm\n");
 printd ("Mail $serial remembered as sent\n");
 printd ("----------------------------------------------------------------------\n");
-printd ("----------------------------------------------------------------------\n");
 printd ("-------------------------- END DEBUG INFO ----------------------------\n");
-printd ("----------------------------------------------------------------------\n");
 printd ("----------------------------------------------------------------------\n");
 
 # Append Status info
@@ -429,7 +357,7 @@ nsexit($statinfo);
 # ----------------------------------------------------------------------
 
 sub usage {
-  print "check_email_loop 1.5 Nagios Plugin - Real check of a E-Mail system\n";
+  print "check_email_loop 1.4 Nagios Plugin - Real check of a E-Mail system\n";
   print "=" x 75,"\nERROR: Missing or wrong arguments!\n","=" x 75,"\n";
   print "This script sends a mail with a specific id in the subject via an given\n";
   print "smtp-server to a given email-adress. When the script is run again, it checks\n";
@@ -441,7 +369,10 @@ sub usage {
   print "   -pophost=text      IP or name of the POP3-host to be checked\n";
   print "   -popuser=text      Username of the POP3-account\n";
   print	"   -passwd=text       Password for the POP3-user\n";
+  print	"   -popport=num       Port of pop/imap server\n";
   print	"   -poptimeout=num    Timeout in seconds for the POP3-server\n";
+  print	"   -useimap           Use IMAP instead of POP3\n";
+  print	"   -imapfolder        Look in this imapfolder\n";
   print "   -smtphost=text     IP oder name of the SMTP host\n";
   print "   -smtpuser=text     name of the SMTP user\n";
   print "   -smtppasswd=text   password of the SMTP user\n";
@@ -450,8 +381,8 @@ sub usage {
   print "   -usesmtpssl        Set this to login with ssl enabled on smtp server\n";
   print "   -usesmtptls        Set this to login with tls enabled on smtp server\n";
   print "   -statfile=text     File to save ids of messages ($statfile)\n";
-  print "   -interval=num      Time (in minutes) that must pass by before sending\n";
-  print "                      another Ping-mail (give a new try);\n"; 
+#  print "   -interval=num      Time (in minutes) that must pass by before sending\n";
+#  print "                      another Ping-mail (give a new try);\n"; 
   print "   -lostwarn=num      WARNING-state if more than num lost emails\n";
   print "   -lostcrit=num      CRITICAL \n";
   print "   -pendwarn=num      WARNING-state if more than num pending emails\n";
@@ -461,14 +392,14 @@ sub usage {
   print "   -keeporphaned      Set this to NOT delete orphaned E-Mail Ping msg from POP3\n";
   print "   -trashall          Set this to DELETE all E-Mail msg on server\n";
   print "   -usessl            Set this to login with ssl enabled on server\n";
-  print "   -debug             send SMTP tranaction info to stderr\n\n";
+  print "   -debug             Print debug messages like SMTP tranaction info to stderr\n\n";
   print " Options may abbreviated!\n";
   print " LOST mails are mails, being sent before the last mail arrived back.\n";
   print " PENDING mails are those, which are not. (supposed to be on the way)\n";
   print "\nExample: \n";
   print " $0 -poph=host -pa=pw -popu=popts -smtph=host -from=root\@me.com\n ";
   print "      -to=remailer\@testxy.com -lostc=0 -pendc=2\n";
-  print "\nCopyleft 19.10.2000, Benjamin Schmid / 2003 Michael Markstaller, mm\@elabnet.de\n";
+  print "\nCopyleft 2000 Benjamin Schmid, 2003 Michael Markstaller <mm\@elabnet.de>\n";
   print "This script comes with ABSOLUTELY NO WARRANTY\n";
   print "This programm is licensed under the terms of the ";
   print "GNU General Public License\n\n";
@@ -504,7 +435,11 @@ sub messagematchsid {
   $id =~ s/^LI/ID/;    # evtl. remove lost mail mark
   @tmp = grep /E-Mail Ping \[/, @$mailref;
   chomp @tmp;
-  printd ("Comparing Mail content ".$tmp[0]." with Mail ID $id:\n");
+  if (defined($tmp[0])) {
+	printd ("Comparing Mail content ".$tmp[0]." with Mail ID: ".$id." \n");
+  } else {
+	printd("Line had no match with: ".$id . "\n");
+  }
   if ($tmp[0] && $id ne "" && $tmp[0] =~ /$id/)
     { $match = 1; }
 
@@ -534,5 +469,199 @@ sub load_modules {
                return 0;
        }
        return 1;
+}
+
+sub doPop {
+	printd ("----------------------------------------------------------------------\n");
+	printd ("-------------------- Checking POP3 Mails -----------------------------\n");
+	printd ("----------------------------------------------------------------------\n");
+	if (defined $usessl) { printd ("Retrieving POP mails from $pophost using ssl and user: $popuser and password $poppasswd\n"); }
+	else { printd ("Retrieving POP mails from $pophost using user: $popuser and password $poppasswd\n"); }
+
+	# no the interessting part: let's if they are receiving ;-)
+
+	$pop = Mail::POP3Client->new( HOST => $pophost,
+		TIMEOUT => $poptimeout,
+		USESSL => $usessl ,
+		DEBUG => $debug ) || nsexit("POP3 connect timeout (>$poptimeout s, host: $pophost)",'CRITICAL');
+
+	$pop->User($popuser);
+	$pop->Pass($poppasswd);
+	$pop->Connect() >=0 || nsexit("POP3 connect timeout (>$poptimeout s, host: $pophost)",'CRITICAL');
+	$pop->Login()|| nsexit("POP3 login failed (user:$popuser)",'CRITICAL');
+	$msgcount=$pop->Count();
+
+	$statinfo="$msgcount mails on POP3";
+
+	printd ("Found $statinfo\n");
+
+	nsexit("POP3 login failed (user:$popuser)",'CRITICAL') if (!defined($msgcount));
+
+	# Check if more than maxmsg mails in pop3-box
+	nsexit(">$maxmsg Mails ($msgcount Mails on POP3); Please delete !",'WARNING') if ($msgcount > $maxmsg);
+
+	my ($mid, $nid);
+	# Count messages, that we are looking 4:
+	while ($msgcount > 0) {
+	  my $msgtext = "";
+	  my @msglines2 = ();
+	  foreach ($pop->Head($msgcount)) { 
+		#$msgtext= $msgtext . $_ . "\n"; 
+		push(@msglines2, $_);
+	  }
+	  #@msglines = $msgtext;
+	  for (my $i=0; $i < scalar @messageids; $i++) {
+	    if (messagematchsid(\@msglines2,$messageids[$i])) { 
+	      $matchcount++;
+	      printd ("Messages are matching\n");
+	      # newest received mail than the others, ok remeber id.
+	      if (!defined $newestid) { 
+		$newestid = $messageids[$i];
+	      } else {
+		    $messageids[$i] =~ /\#(\d+)\#/;
+		$mid = $1;
+		    $newestid =~ /\#(\d+)\#/;
+		$nid = $1;
+		if ($mid > $nid) { 
+		  $newestid = $messageids[$i]; 
+		}
+	      }
+	      printd ("Deleted retrieved mail $msgcount with messageid ".$messageids[$i]."\n");
+	      $pop->Delete($msgcount);  # remove E-Mail from POP3 server
+	      splice @messageids, $i, 1;# remove id from List
+		  last;                     # stop looking in list
+		} 
+	  }
+
+		# Messages Deleted before are marked for deletion here again
+		# we should try to avoid this.
+		# Delete orphaned Email-ping msg
+		my @msgsubject = grep(/^Subject/, @msglines2);
+		chomp @msgsubject;
+
+		# Maybe we should delete all messages?
+		if (defined($trashall)) {
+		    $pop->Delete($msgcount);
+		    printd ("Deleted mail $msgcount\n");
+		# Scan Subject if email is an Email-Ping. In fact we match and delete also successfully retrieved messages here again.
+		} elsif (!defined($keeporphaned) && $msgsubject[0] =~ /E-Mail Ping \[/) {
+		    $pop->Delete($msgcount);  # remove E-Mail from POP3 server
+		    printd ("Deleted orphaned mail $msgcount with subject ".$msgsubject[0]."\n");
+		}
+
+
+		$msgcount--;
+	}
+	$pop->close();  # necessary for pop3 deletion!
+}
+
+
+sub doImap {
+	printd ("----------------------------------------------------------------------\n");
+	printd ("-------------------- Checking IMAP4 Mails ----------------------------\n");
+	printd ("----------------------------------------------------------------------\n");
+	my $imap;
+	my $imap_port;
+	$imap_port = $popport if $popport;
+	eval {
+	
+		if( $usessl ) {
+			$imap_port = 585 unless $popport;		
+			my $socket = IO::Socket::SSL->new("$pophost:$imap_port");
+			die IO::Socket::SSL::errstr() unless $socket;
+			$socket->autoflush(1);
+			$imap = Mail::IMAPClient->new(Socket=>$socket, Debug => 0 );
+			$imap->State(Mail::IMAPClient->Connected);
+			$imap->_read_line() if "$Mail::IMAPClient::VERSION" le "2.2.9"; # necessary to remove the server's "ready" line from the input buffer for old versions of Mail::IMAPClient. Using string comparison for the version check because the numeric didn't work on Darwin and for Mail::IMAPClient the next version is 2.3.0 and then 3.00 so string comparison works
+			$imap->User($popuser);
+			$imap->Password($poppasswd);
+			$imap->login() or die "$@";
+#		} elsif( $tls ) {
+#			# XXX  THIS PART IS NOT DONE YET ... NEED TO OPEN A REGULAR IMAP CONNECTION, THEN ISSUE THE "STARTTLS" COMMAND MANUALLY, SWITCHING THE SOCKET TO IO::SOCKET::SSL, AND THEN GIVING IT BACK TO MAIL::IMAPCLIENT ...
+#			$imap_port = $default_imap_port unless $imap_port;		
+#			$imap = Mail::IMAPClient->new(Debug => 0 );		
+#			$imap->Server("$imap_server:$imap_port");
+#			$imap->User($username);
+#			$imap->Password($password);
+#			$imap->connect() or die "$@";		
+		} else {
+			$imap_port = 143 unless $popport;		
+			$imap = Mail::IMAPClient->new(Debug => 0 );		
+			$imap->Server($pophost);
+			$imap->Port($imap_port);
+			$imap->User($popuser);
+			$imap->Password($poppasswd);
+			$imap->connect() or die "$@";
+		}
+
+	};	
+	
+	if( $@ ) {
+		chomp $@;
+		print "IMAP RECEIVE CRITICAL - Could not connect to $pophost port $imap_port: $@\n";
+		exit $ERRORS{CRITICAL};	
+	}
+	unless( $imap ) {
+		print "IMAP RECEIVE CRITICAL - Could not connect to $pophost port $imap_port: $@\n";
+		exit $ERRORS{CRITICAL};
+	}
+	
+	unless( $imap->select($imapfolder) ) {
+		print "IMAP RECEIVE CRITICAL - Could not select $imapfolder: $@ $!\n";
+		printd ("Well, here is a folderlist: \n" . $imap->folders() . "\n");
+		foreach ($imap->folders()) {
+			printd(" - " . $_ . "\n");
+		}
+		$imap->logout();
+		exit $ERRORS{CRITICAL};
+	}
+	
+	my $searchfailed = 0;
+	my @messagelist = ();
+	@messagelist = $imap->search("SUBJECT \"E-Mail Ping [\"");
+	#if ($searchfailed == 1) {
+		#print "IMAP SEARCH CRITICAL - Could not search $imapfolder: $@ $!\n";
+		#$imap->logout();
+		#exit $ERRORS{CRITICAL};
+	#}
+	$statinfo=@messagelist . " messages on IMAP";
+	
+	my ($mid, $nid);
+	foreach (@messagelist) {
+		my @msglines2 = ($imap->get_header($_, "Subject") . "\n");
+		my $mailDeleted = 0;
+		for (my $i=0; $i < scalar @messageids; $i++) {
+			if (messagematchsid(\@msglines2,$messageids[$i])) { 
+				$matchcount++;
+				printd ("Messages are matching\n");
+				# newest received mail than the others, ok remeber id.
+				if (!defined $newestid) { 
+					$newestid = $messageids[$i];
+				} else {
+					$messageids[$i] =~ /\#(\d+)\#/;
+					$mid = $1;
+					$newestid =~ /\#(\d+)\#/;
+					$nid = $1;
+					if ($mid > $nid) { 
+						$newestid = $messageids[$i]; 
+					}
+				}
+				printd ("Deleted retrieved mail $_ with messageid ".$messageids[$i]."\n");
+				$imap->delete_message($_);  # remove E-Mail from POP3 server
+				splice @messageids, $i, 1;# remove id from List
+				$mailDeleted = 1;
+				last;                     # stop looking in list
+			}
+		}
+
+		if ($mailDeleted == 0 && !defined($keeporphaned) && $msglines2[0] =~ /E-Mail Ping \[/) {
+			$imap->delete_message($_);  # remove E-Mail from POP3 server
+			printd ($mailDeleted . "Deleted orphaned mail $_ with subject ".$msglines2[0]."\n");
+			$mailDeleted = 1;
+		}
+	}
+	
+	$imap->close();
+	#exit();
 }
 
