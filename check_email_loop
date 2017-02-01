@@ -99,6 +99,7 @@ my %ERRORS = ('OK' , '0',
 
 my ($state) = ("UNKNOWN");
 my ($sender,$receiver,$pophost,$popuser,$poppasswd) = ("","","","","","");
+my ($popauth) = "BEST";
 my ($popport, $imapfolder);
 my ($keeporphaned, $useimap, $showversion);
 my ($smtphost, $smtpuser, $smtppasswd, $smtpport);
@@ -155,6 +156,7 @@ my $status = GetOptions(
 			"passwd=s",\$poppasswd,
 			"poptimeout=i",\$poptimeout,
 			"popport=i",\$popport,
+			"popauth=s",\$popauth,
 			"useimap",\$useimap,
 			"imapfolder=s",\$imapfolder,
 			"smtphost=s",\$smtphost,
@@ -413,6 +415,7 @@ sub usage {
   print "   -popuser=text      Username of the POP3-account\n";
   print	"   -passwd=text       Password for the POP3-user\n";
   print	"   -popport=num       Port of pop/imap server\n";
+  print	"   -popauth=text      POP3 authentication method can be BEST, PASS, APOP or CRAM-MD5 (Default: BEST)\n";
   print	"   -poptimeout=num    Timeout in seconds for the POP3-server\n";
   print	"   -useimap           Use IMAP instead of POP3\n";
   print	"   -imapfolder        Look in this imapfolder\n";
@@ -541,6 +544,7 @@ sub doPop {
 	$pop = Mail::POP3Client->new( HOST => $pophost,
 		TIMEOUT => $poptimeout,
 		USESSL => $usessl ,
+		AUTH_MODE => $popauth,
 		DEBUG => $debug ) || nsexit("POP3 connect timeout (>$poptimeout s, host: $pophost)",'CRITICAL');
 
 	$pop->User($popuser);
