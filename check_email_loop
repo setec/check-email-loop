@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 #
-my $scriptversion = "1.4.3";
-my $scriptdate = "2012-05-22";
+my $scriptversion = "1.4.4";
+my $scriptdate = "2018-07-11";
 #
 # check_email_loop Nagios Plugin
 #
@@ -75,6 +75,15 @@ my $scriptdate = "2012-05-22";
 # - Minor cleanups to the hacks starting with IMAP fork of v.1.3.1
 # - Ommit perl warnings
 #
+# 2018-07-11 v1.4.4     BowTyTroll, TheTroll@BowTyTroll.com
+# - Fix SMTP auth when "-usesmtptls"/Deprecated Net::SMTP::TLS for Net::SMTP
+# - Add "-smtpehlo" option, with default value hostfqdn(), for SMTP HELO/EHLO
+# - Add RFC 2822 compliant From, Date and Message-ID headers to emails
+# - Add default imap port variables
+# - Correct IMAP SSL/TLS port default from 585 to 993
+# - Correct missing require for IO::Socket::SSL if using explicit IMAP SSL
+# - Make "INBOX" the default $imapfolder
+#
 #
 # This software is licensed under the terms and conditions of the GPLv2 license
 #   https://www.gnu.org/licenses/gpl-2.0.html
@@ -86,7 +95,9 @@ my $scriptdate = "2012-05-22";
 use MIME::Base64;
 use strict;
 use Getopt::Long;
-use Digest::MD5;
+use Digest::MD5 qw(md5 md5_hex md5_base64);
+use Net::Domain qw(hostfqdn);
+use Email::Date::Format qw(email_date);
 &Getopt::Long::config('auto_abbrev');
 
 # ----------------------------------------
@@ -100,12 +111,14 @@ my %ERRORS = ('OK' , '0',
 my ($state) = ("UNKNOWN");
 my ($sender,$receiver,$pophost,$popuser,$poppasswd) = ("","","","","","");
 my ($popauth) = "BEST";
-my ($popport, $imapfolder);
+my ($popport);
+my ($imapfolder) = ("INBOX");
 my ($keeporphaned, $useimap, $showversion);
 my ($smtphost, $smtpuser, $smtppasswd, $smtpport);
 my ($trashall,$usessl,$forgetafter);
 my ($usestarttls);
 my ($subjectident) = ("E-Mail Ping");
+my ($smtpehlo) = (hostfqdn());
 my ($sendmailonly,$sendnomail);
 my ($usesendmail) = ("");
 my ($usesmtpssl,$usesmtptls);
@@ -122,6 +135,9 @@ my ($statinfo) = ("");
 my $default_smtp_port = "25";
 my $default_smtp_ssl_port = "465";
 my $default_smtp_tls_port = "587";
+
+my $default_imap_port = "143";
+my $default_imap_ssl_port = "993";
 
 # initialize some vars
 $smtphost = "";
@@ -164,6 +180,7 @@ my $status = GetOptions(
 			"smtpuser=s",\$smtpuser,
 			"smtppasswd=s",\$smtppasswd,
 			"smtpport=i",\$smtpport,
+			"smtpehlo=s",\$smtpehlo,
 			"statfile=s",\$statfile,
 			"lostwarn=i",\$lostwarn,
 			"lostcrit=i",\$lostcrit,
@@ -190,9 +207,10 @@ usage() if ($showversion || $status == 0 || ! ($pophost && $popuser && $poppassw
 	 &! ($sendmailonly && $smtphost && $receiver && $sender ));
 
 my @required_module = ();
+push @required_module, 'Email::Date::Format';
 push @required_module, 'Net::SMTP::SSL' if $usesmtpssl;
+push @required_module, 'IO::Socket::SSL' if $usessl;
 push @required_module, ('MIME::Base64','Authen::SASL') if $usesmtpssl && $smtpuser;
-push @required_module, 'Net::SMTP::TLS' if $usesmtptls;
 push @required_module, 'Authen::SASL' if $smtpuser && !$usesmtpssl && !$usesmtptls;
 exit $ERRORS{"UNKNOWN"} unless load_modules(@required_module);
 
@@ -286,7 +304,11 @@ if (!defined($sendnomail)) {
 if ( $debug == 1  ) {
     $other_smtp_opts{'Debug'} = 1;
 }
-my $maildata = "To: $receiver\n".
+
+my $maildata = "From: <$sender>\n".
+  "To: $receiver\n".
+  "Date: " .  email_date() . "\n".
+  "Message-Id: <" . md5_hex($serial) . "\@$smtpehlo>\n".
   "Subject: $subjectident [$serial]\n".
   "This is an automatically sent E-Mail.\n".
   "It is not intended for a human reader.\n\n".
@@ -298,18 +320,21 @@ my $smtp;
 eval {
        if( $usesmtptls ) {
                $smtpport = $default_smtp_tls_port unless $smtpport;
-               $smtp = Net::SMTP::TLS->new($smtphost, Timeout=>$smtptimeout, Port=>$smtpport, User=>$smtpuser, Password=>$smtppasswd);
+               $smtp = Net::SMTP->new($smtphost, Timeout=>$smtptimeout, Port=>$smtpport, starttls=>1, Hello=>$smtpehlo, %other_smtp_opts);
+               if( $smtp && $smtpuser )  {
+                       $smtp->auth($smtpuser, $smtppasswd);
+               }
        }
        elsif( $usesmtpssl ) {
                $smtpport = $default_smtp_ssl_port unless $smtpport;
-               $smtp = Net::SMTP::SSL->new($smtphost, Port => $smtpport, Timeout=>$smtptimeout, %other_smtp_opts);
+               $smtp = Net::SMTP::SSL->new($smtphost, Port => $smtpport, Timeout=>$smtptimeout, Hello=>$smtpehlo, %other_smtp_opts);
                if( $smtp && $smtpuser )  {
                        $smtp->auth($smtpuser, $smtppasswd);
                }
        }
        else {
                $smtpport = $default_smtp_port unless $smtpport;
-               $smtp = Net::SMTP->new($smtphost, Port=>$smtpport, Timeout=>$smtptimeout,%other_smtp_opts);
+               $smtp = Net::SMTP->new($smtphost, Port=>$smtpport, Timeout=>$smtptimeout, Hello=>$smtpehlo, %other_smtp_opts);
                if( $smtp && $smtpuser ) {
                        $smtp->auth($smtpuser, $smtppasswd);
                }
@@ -425,6 +450,7 @@ sub usage {
   print "   -smtpuser=text     Name of the SMTP user\n";
   print "   -smtppasswd=text   Password of the SMTP user\n";
   print "   -smtpport=num      Port to of the SMTP service\n";
+  print "   -smtpehlo=text     FQDN to be reported to SMTP server during HELO/EHLO\n";
   print "   -smtptimeout=num   Timeout in seconds for the SMTP-server\n";
   print "   -usesmtpssl        Set this to login with ssl enabled on smtp server\n";
   print "   -usesmtptls        Set this to login with tls enabled on smtp server\n";
@@ -628,7 +654,7 @@ sub doImap {
 	eval {
 
 		if( $usessl ) {
-			$imap_port = 585 unless $popport;
+			$imap_port = $default_imap_ssl_port unless $popport;
 			my $socket = IO::Socket::SSL->new("$pophost:$imap_port");
 			die IO::Socket::SSL::errstr() unless $socket;
 			$socket->autoflush(1);
@@ -646,7 +672,7 @@ sub doImap {
 #			$imap->User($username);
 #			$imap->Password($password);
 #			$imap->connect() or die "$@";
-			$imap_port = 143 unless $popport;
+			$imap_port = $default_imap_port unless $popport;
 			$imap = Mail::IMAPClient->new(Debug => 0 );
 			$imap->Server($pophost);
 			$imap->Port($imap_port);
@@ -655,7 +681,7 @@ sub doImap {
 			$imap->tag_and_run("AUTHENTICATE PLAIN " . encode_base64("\0" . $popuser . "\0" . $poppasswd))
   				or die "Unable to login to imap server with user " . $popuser;
 		} else {
-			$imap_port = 143 unless $popport;
+			$imap_port = $default_imap_port unless $popport;
 			$imap = Mail::IMAPClient->new(Debug => 0 );
 			$imap->Server($pophost);
 			$imap->Port($imap_port);
