@@ -9,7 +9,7 @@ my $scriptdate = "2012-05-22";
 # an given smtp-server to a given email-adress. When the script
 # is run again, it checks for this Email (with its unique id) on
 # a given pop3 account and send another mail.
-# 
+#
 #
 # Example: check_email_loop.pl -poph=mypop -popu=user -pa=password
 # 	   -smtph=mailer -from=returnadress@yoursite.com
@@ -18,20 +18,20 @@ my $scriptdate = "2012-05-22";
 # This example will send each time this check is executed a new
 # mail to remaileradress@friend.com using the SMTP-Host mailer.
 # Then it looks for any back-forwarded mails in the POP3 host
-# mypop. In this Configuration CRITICAL state will be reached if  
-# more than 2 Mails are pending (meaning that they did not came 
+# mypop. In this Configuration CRITICAL state will be reached if
+# more than 2 Mails are pending (meaning that they did not came
 # back till now) or if a mails got lost (meaning a mail, that was
 # send later came back prior to another mail).
-# 
+#
 # 2000     v1.0         Benjamin Schmid, blueshift@gmx.net
 #   - Initial release into the wild.
 #
-# 2006                  Michael Markstaller, mm@elabnet.de 
+# 2006                  Michael Markstaller, mm@elabnet.de
 #  - fixed some unquoted strings
 #  - fixed/added pendwarn/lostwarn
-#  - added deleting of orphaned check-emails 
+#  - added deleting of orphaned check-emails
 #    changed to use "top" instead of get to minimize traffic
-#    (required changing match-string from "Subject: Email-ping [" 
+#    (required changing match-string from "Subject: Email-ping ["
 #     to "Email-Ping ["
 #  - Allow multiple mail-servers (separate stats files via target server hash).
 #
@@ -47,30 +47,30 @@ my $scriptdate = "2012-05-22";
 #  - Added forgetafter param
 #  Remaining Bugs:
 #  - Try to delete matched id already marked for deletion
-#  - "interval" param yet has no effect 
+#  - "interval" param yet has no effect
 #
 # 2008-05    v1.3       Johannes Derek
 #  - Added Support for SMTP Authentication (code taken from check_email_delivery)
 #  - SMTP TLS Support working, SMTP SSL Support not tested
 #
-# 2008-09    v1.3.1     James W., September 2008, 
+# 2008-09    v1.3.1     James W., September 2008,
 #  - sanity check for required Authen:SASL module
 #
-# 2010-10-09 v1.4.0     Arjen Heidinga <arjen.heidinga@anachron.com> 
+# 2010-10-09 v1.4.0     Arjen Heidinga <arjen.heidinga@anachron.com>
 #  (NOTE: This branch forked of v.1.3.1 and did not include the minor
 #         stabilization fixes of the 'oldstable' version 1.3.2 to 1.3.3
 #  - Added IMAP4 support. (Still a bit dirty code)
 #  - Some code cleanups, fix a lot of warnings.
 #
 # 2010-10-09 v1.4.1     Frieder B.
-# -  Contribution of IMAP4 STARTTLS support using option -usestarttls. 
+# -  Contribution of IMAP4 STARTTLS support using option -usestarttls.
 #
 # 2011-08-30 v1.4.2     Frieder B.
 # - Deferred on-demand loading of POP3 / IMAP libs
 # - Custom E-Mail subject which allows to reuse the same inbox for multiple loops
 # - New -sendnomail and -sendmailonly option
 #
-# 2012-05-22 v1.4.3     Benjamin Schmid, blueshift@gmx.net 
+# 2012-05-22 v1.4.3     Benjamin Schmid, blueshift@gmx.net
 # - Started Git repository & realizing the big version mess
 # - Minor cleanups to the hacks starting with IMAP fork of v.1.3.1
 # - Ommit perl warnings
@@ -105,7 +105,7 @@ my ($keeporphaned, $useimap, $showversion);
 my ($smtphost, $smtpuser, $smtppasswd, $smtpport);
 my ($trashall,$usessl,$forgetafter);
 my ($usestarttls);
-my ($subjectident) = ("E-Mail Ping"); 
+my ($subjectident) = ("E-Mail Ping");
 my ($sendmailonly,$sendnomail);
 my ($usesendmail) = ("");
 my ($usesmtpssl,$usesmtptls);
@@ -214,7 +214,7 @@ if (open STATF, "$statfile") {
   close STATF;
 }
 
-# Try to open statfile for writing 
+# Try to open statfile for writing
 if (!open STATF, ">$statfile") {
   nsexit("Failed to open mail-ID database $statfile for writing",'CRITICAL');
 } else {
@@ -275,7 +275,7 @@ foreach my $id (@messageids) {
 }
 
 # creating new serial id
-my $timenow = time();  
+my $timenow = time();
 my $serial = "ID#" . $timenow . "#$$";
 
 # Ok - check if it's time to release another mail
@@ -286,8 +286,8 @@ if (!defined($sendnomail)) {
 if ( $debug == 1  ) {
     $other_smtp_opts{'Debug'} = 1;
 }
-my $maildata = "To: $receiver\n". 
-  "Subject: $subjectident [$serial]\n". 
+my $maildata = "To: $receiver\n".
+  "Subject: $subjectident [$serial]\n".
   "This is an automatically sent E-Mail.\n".
   "It is not intended for a human reader.\n\n".
   "Serial No: $serial\n";
@@ -348,7 +348,7 @@ else {
  $smtp->quit;
 # ) || nsexit("Error delivering message",'CRITICAL');
 } else {
-  open (SENDMAIL,"|$usesendmail -t -f $sender 2>&1") || 
+  open (SENDMAIL,"|$usesendmail -t -f $sender 2>&1") ||
                  nsexit("SENDMAIL CRITICAL - Using sendmail failed $receiver",'CRITICAL');
   print SENDMAIL $maildata;
   close SENDMAIL;
@@ -356,7 +356,7 @@ else {
 
  if (defined($sendmailonly)) {
    print "$serial\n";
- }else{ 
+ }else{
    print STATF "$serial\n";     # remember send mail of this session
    close STATF;
  }
@@ -366,7 +366,7 @@ else {
 my @tmp = grep /^ID/, @messageids;
 my $pendingm = scalar @tmp;
 @tmp = grep /^LI/, @messageids;
-my $lostm = scalar @tmp; 
+my $lostm = scalar @tmp;
 
 # Evaluate the Warnin/Crit-Levels
 if (defined $pendwarn && $pendingm > $pendwarn) { $state = 'WARNING'; }
@@ -374,7 +374,7 @@ if (defined $lostwarn && $lostm > $lostwarn) { $state = 'WARNING'; }
 if (defined $pendcrit && $pendingm > $pendcrit) { $state = 'CRITICAL'; }
 if (defined $lostcrit && $lostm > $lostcrit) { $state = 'CRITICAL'; }
 
-if ((defined $pendwarn || defined $pendcrit || defined $lostwarn 
+if ((defined $pendwarn || defined $pendcrit || defined $lostwarn
      || defined $lostcrit) && ($state eq 'UNKNOWN')) {$state='OK';}
 
 printd ("STATUS:\n");
@@ -491,7 +491,7 @@ sub messagematchsid {
   my ($mailref,$id) = (@_);
   my (@tmp);
   my $match = 0;
- 
+
   # ID
   $id =~ s/^LI/ID/;    # evtl. remove lost mail mark
   @tmp = grep /$subjectident \[/, @$mailref;
@@ -506,12 +506,12 @@ sub messagematchsid {
 
   # Sender:
 #  @tmp = grep /^From:\s+/, @$mailref;
-#  if (@tmp && $sender ne "") 
+#  if (@tmp && $sender ne "")
 #    { $match = $match && ($tmp[0]=~/$sender/); }
 
   # Receiver:
 #  @tmp = grep /^To: /, @$mailref;
-#  if (@tmp && $receiver ne "") 
+#  if (@tmp && $receiver ne "")
 #    { $match = $match && ($tmp[0]=~/$receiver/); }
 
   return $match;
@@ -567,32 +567,32 @@ sub doPop {
 	while ($msgcount > 0) {
 	  my $msgtext = "";
 	  my @msglines2 = ();
-	  foreach ($pop->Head($msgcount)) { 
-		#$msgtext= $msgtext . $_ . "\n"; 
+	  foreach ($pop->Head($msgcount)) {
+		#$msgtext= $msgtext . $_ . "\n";
 		push(@msglines2, $_);
 	  }
 	  #@msglines = $msgtext;
 	  for (my $i=0; $i < scalar @messageids; $i++) {
-	    if (messagematchsid(\@msglines2,$messageids[$i])) { 
+	    if (messagematchsid(\@msglines2,$messageids[$i])) {
 	      $matchcount++;
 	      printd ("Messages are matching\n");
 	      # newest received mail than the others, ok remeber id.
-	      if (!defined $newestid) { 
+	      if (!defined $newestid) {
 		$newestid = $messageids[$i];
 	      } else {
 		    $messageids[$i] =~ /\#(\d+)\#/;
 		$mid = $1;
 		    $newestid =~ /\#(\d+)\#/;
 		$nid = $1;
-		if ($mid > $nid) { 
-		  $newestid = $messageids[$i]; 
+		if ($mid > $nid) {
+		  $newestid = $messageids[$i];
 		}
 	      }
 	      printd ("Deleted retrieved mail $msgcount with messageid ".$messageids[$i]."\n");
 	      $pop->Delete($msgcount);  # remove E-Mail from POP3 server
 	      splice @messageids, $i, 1;# remove id from List
 		  last;                     # stop looking in list
-		} 
+		}
 	  }
 
 		# Messages Deleted before are marked for deletion here again
@@ -626,9 +626,9 @@ sub doImap {
 	my $imap_port;
 	$imap_port = $popport if $popport;
 	eval {
-	
+
 		if( $usessl ) {
-			$imap_port = 585 unless $popport;		
+			$imap_port = 585 unless $popport;
 			my $socket = IO::Socket::SSL->new("$pophost:$imap_port");
 			die IO::Socket::SSL::errstr() unless $socket;
 			$socket->autoflush(1);
@@ -640,14 +640,14 @@ sub doImap {
 			$imap->login() or die "$@";
 		} elsif( $usestarttls ) {
 #			# XXX  THIS PART IS NOT DONE YET ... NEED TO OPEN A REGULAR IMAP CONNECTION, THEN ISSUE THE "STARTTLS" COMMAND MANUALLY, SWITCHING THE SOCKET TO IO::SOCKET::SSL, AND THEN GIVING IT BACK TO MAIL::IMAPCLIENT ...
-#			$imap_port = $default_imap_port unless $imap_port;		
-#			$imap = Mail::IMAPClient->new(Debug => 0 );		
+#			$imap_port = $default_imap_port unless $imap_port;
+#			$imap = Mail::IMAPClient->new(Debug => 0 );
 #			$imap->Server("$imap_server:$imap_port");
 #			$imap->User($username);
 #			$imap->Password($password);
-#			$imap->connect() or die "$@";		
-			$imap_port = 143 unless $popport;		
-			$imap = Mail::IMAPClient->new(Debug => 0 );		
+#			$imap->connect() or die "$@";
+			$imap_port = 143 unless $popport;
+			$imap = Mail::IMAPClient->new(Debug => 0 );
 			$imap->Server($pophost);
 			$imap->Port($imap_port);
 			$imap->connect() or die "Unable to connect to imap server";
@@ -655,8 +655,8 @@ sub doImap {
 			$imap->tag_and_run("AUTHENTICATE PLAIN " . encode_base64("\0" . $popuser . "\0" . $poppasswd))
   				or die "Unable to login to imap server with user " . $popuser;
 		} else {
-			$imap_port = 143 unless $popport;		
-			$imap = Mail::IMAPClient->new(Debug => 0 );		
+			$imap_port = 143 unless $popport;
+			$imap = Mail::IMAPClient->new(Debug => 0 );
 			$imap->Server($pophost);
 			$imap->Port($imap_port);
 			$imap->User($popuser);
@@ -664,18 +664,18 @@ sub doImap {
 			$imap->connect() or die "$@";
 		}
 
-	};	
-	
+	};
+
 	if( $@ ) {
 		chomp $@;
 		print "IMAP RECEIVE CRITICAL - Could not connect to $pophost port $imap_port: $@\n";
-		exit $ERRORS{CRITICAL};	
+		exit $ERRORS{CRITICAL};
 	}
 	unless( $imap ) {
 		print "IMAP RECEIVE CRITICAL - Could not connect to $pophost port $imap_port: $@\n";
 		exit $ERRORS{CRITICAL};
 	}
-	
+
 	unless( $imap->select($imapfolder) ) {
 		print "IMAP RECEIVE CRITICAL - Could not select $imapfolder: $@ $!\n";
 		printd ("Well, here is a folderlist: \n" . $imap->folders() . "\n");
@@ -685,29 +685,29 @@ sub doImap {
 		$imap->logout();
 		exit $ERRORS{CRITICAL};
 	}
-	
+
 	my @messagelist = ();
 	@messagelist = $imap->search("SUBJECT \"$subjectident [\"");
 	$statinfo=@messagelist . " messages on IMAP";
-	
+
 	my ($mid, $nid);
 	foreach (@messagelist) {
 		my @msglines2 = ($imap->get_header($_, "Subject") . "\n");
 		my $mailDeleted = 0;
 		for (my $i=0; $i < scalar @messageids; $i++) {
-			if (messagematchsid(\@msglines2,$messageids[$i])) { 
+			if (messagematchsid(\@msglines2,$messageids[$i])) {
 				$matchcount++;
 				printd ("Messages are matching\n");
 				# newest received mail than the others, ok remeber id.
-				if (!defined $newestid) { 
+				if (!defined $newestid) {
 					$newestid = $messageids[$i];
 				} else {
 					$messageids[$i] =~ /\#(\d+)\#/;
 					$mid = $1;
 					$newestid =~ /\#(\d+)\#/;
 					$nid = $1;
-					if ($mid > $nid) { 
-						$newestid = $messageids[$i]; 
+					if ($mid > $nid) {
+						$newestid = $messageids[$i];
 					}
 				}
 				printd ("Deleted retrieved mail $_ with messageid ".$messageids[$i]."\n");
@@ -724,7 +724,6 @@ sub doImap {
 			$mailDeleted = 1;
 		}
 	}
-	
+
 	$imap->close();
 }
-
