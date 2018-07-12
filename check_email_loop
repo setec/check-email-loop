@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-my $scriptversion = "1.4.4";
+my $scriptversion = "1.4.5";
 my $scriptdate = "2018-07-11";
 #
 # check_email_loop Nagios Plugin
@@ -83,6 +83,9 @@ my $scriptdate = "2018-07-11";
 # - Correct IMAP SSL/TLS port default from 585 to 993
 # - Correct missing require for IO::Socket::SSL if using explicit IMAP SSL
 # - Make "INBOX" the default $imapfolder
+#
+# 2018-07-11 v1.4.5     BowTyTroll, TheTroll@BowTyTroll.com
+# - Add missing require directive for Mail::IMAPClient, when '-useimap' given
 #
 #
 # This software is licensed under the terms and conditions of the GPLv2 license
@@ -208,6 +211,7 @@ usage() if ($showversion || $status == 0 || ! ($pophost && $popuser && $poppassw
 
 my @required_module = ();
 push @required_module, 'Email::Date::Format';
+push @required_module, 'Mail::IMAPClient' if $useimap;
 push @required_module, 'Net::SMTP::SSL' if $usesmtpssl;
 push @required_module, 'IO::Socket::SSL' if $usessl;
 push @required_module, ('MIME::Base64','Authen::SASL') if $usesmtpssl && $smtpuser;
