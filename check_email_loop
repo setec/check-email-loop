@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 #
-my $scriptversion = "1.4.5";
-my $scriptdate = "2018-07-11";
+my $scriptversion = "1.4.6";
+my $scriptdate = "2018-07-14";
 #
 # check_email_loop Nagios Plugin
 #
@@ -87,6 +87,10 @@ my $scriptdate = "2018-07-11";
 # 2018-07-11 v1.4.5     BowTyTroll, TheTroll@BowTyTroll.com
 # - Add missing require directive for Mail::IMAPClient, when '-useimap' given
 #
+# 2018-07-14 v1.4.6     BowTyTroll, TheTroll@BowTyTroll.com
+# - Add statfile directory parameter ('statfiledir')
+# - Make default statfile directory the script directory (NOT working directory)
+#
 #
 # This software is licensed under the terms and conditions of the GPLv2 license
 #   https://www.gnu.org/licenses/gpl-2.0.html
@@ -101,9 +105,16 @@ use Getopt::Long;
 use Digest::MD5 qw(md5 md5_hex md5_base64);
 use Net::Domain qw(hostfqdn);
 use Email::Date::Format qw(email_date);
+use File::Basename;
+use File::Spec::Functions qw(rel2abs);
 &Getopt::Long::config('auto_abbrev');
 
 # ----------------------------------------
+
+#Explicitly get the directory of this script, in case the working directory
+#is something nasty like '/' (e.g. this happens when running under Icinga2).
+my $scriptdir = dirname(rel2abs($0));
+my $statfiledir = $scriptdir;
 
 my $TIMEOUT = 120;
 my %ERRORS = ('OK' , '0',
@@ -202,6 +213,7 @@ my $status = GetOptions(
 			"usesmtptls",\$usesmtptls,
 			"subjectident=s",\$subjectident,
 			"statfilename=s",\$statfilename,
+			"statfiledir=s",\$statfiledir,
                         "version",\$showversion
 			);
 
@@ -227,6 +239,24 @@ if ($statfilename){
 	my $statfilehash = Digest::MD5->new;
 	$statfilehash->add($sender.$receiver.$pophost.$popuser.$poppasswd.$smtphost);
 	$statfile = $statfile."_".$statfilehash->hexdigest.".stat";
+}
+
+if ($statfiledir) {
+
+  #If the directory doesn't exist (or isn't a directory)
+  if (! -d $statfiledir) {
+    nsexit("Given 'statfiledir' is not a directory",'CRITICAL');
+  }
+
+  #Get the system's directory separator (e.g. '/' on Linux or '\' on Windows')
+  my $dirsepchar = File::Spec->catfile('', '');
+  #If last character is not $dirsepchar (via negated regexp), append it
+  if ($statfiledir !~ /{$dirsepchar}$/) {
+    $statfiledir = $statfiledir . $dirsepchar;
+  }
+
+  #All together now!
+  $statfile = $statfiledir . $statfile;
 }
 
 # Try to read the ids of the last send emails out of statfile
@@ -461,6 +491,7 @@ sub usage {
   print "   -usesendmail=text  Use a sendmail binary (/usr/sbin/sendmail) instead of a SMTP server\n";
   print "   -statfile=text     File to save ids of messages ($statfile)\n";
   print "   -statfilename=text Similar like -statfile but add no hash to the filename\n";
+  print "   -statfiledir=text  Absolute path of directory for the statfile (default is script directory NOT working directory)\n";
   print "   -subjectident=text Identify the email. So we can distinct origin. (Default: 'E-Mail Ping')\n";
   print "   -lostwarn=num      WARNING-state if more than num lost emails\n";
   print "   -lostcrit=num      CRITICAL \n";
