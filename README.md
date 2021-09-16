@@ -1,6 +1,6 @@
-### Welcome the check_email_loop plugin repository
-This script sends a mail with a specific id in the subject via an given SMTP
-server to a given email-adress. When the script is run again, it checks for the
+### Welcome to the `check_email_loop` plugin repository
+This script sends mails with a specific id in the subject via an given SMTP
+server to a given email-adress. When the script is running again, it checks for the
 delivery of this email based on its unique id in the subject on given POP3/IMAP
 mail accounts. 
 
