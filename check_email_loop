@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 #
-my $scriptversion = "1.4.6";
-my $scriptdate = "2018-07-14";
+my $scriptversion = "1.4.7";
+my $scriptdate = "2021-09-16";
 #
 # check_email_loop Nagios Plugin
 #
@@ -91,6 +91,9 @@ my $scriptdate = "2018-07-14";
 # - Add statfile directory parameter ('statfiledir')
 # - Make default statfile directory the script directory (NOT working directory)
 #
+# 2021-09-16 v1.4.7     @futureweb
+# - Fix "plesk-sendmail: S3207: Unable to prepare arguments for mail handlers"
+#   due to a missing newline after the `Subject:` violating RFC5322
 #
 # This software is licensed under the terms and conditions of the GPLv2 license
 #   https://www.gnu.org/licenses/gpl-2.0.html
