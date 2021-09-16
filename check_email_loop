@@ -344,6 +344,7 @@ my $maildata = "From: <$sender>\n".
   "Date: " .  email_date() . "\n".
   "Message-Id: <" . md5_hex($serial) . "\@$smtpehlo>\n".
   "Subject: $subjectident [$serial]\n".
+  "\n".
   "This is an automatically sent E-Mail.\n".
   "It is not intended for a human reader.\n\n".
   "Serial No: $serial\n";
