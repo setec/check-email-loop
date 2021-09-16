@@ -7,14 +7,14 @@ mail accounts.
 Using an external mail forward this script enables you to assert basic
 functionality of sending & receiving emails of your email infrastructure.
 
-Example
+### Example
 ```
 check_email_loop -poph=host -pa=pw -popu=popts -smtph=host \
      -from=root\@me.com -to=remailer\@testxy.com \ 
      -lostc=0 -pendc=2
 ```
 
-DEPENDENCY INSTALLATION
+### Dependencies
 This perl-based nagios plugins requires the perl IMAP and/or POP3 client module. 
 Debian / Ubuntu users can install those dependency using
 ```
